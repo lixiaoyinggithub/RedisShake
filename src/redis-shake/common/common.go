@@ -101,6 +101,7 @@ func GetTotalLink() int {
 	if conf.Options.Type == conf.TypeSync || conf.Options.Type == conf.TypeRump || conf.Options.Type == conf.TypeDump {
 		return len(conf.Options.SourceAddressList)
 	} else if conf.Options.Type == conf.TypeDecode || conf.Options.Type == conf.TypeRestore {
+		//
 		return len(conf.Options.SourceRdbInput)
 	}
 	return 0

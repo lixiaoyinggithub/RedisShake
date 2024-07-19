@@ -17,14 +17,14 @@ import (
 	"time"
 
 	"github.com/alibaba/RedisShake/pkg/libs/log"
-	"github.com/alibaba/RedisShake/redis-shake"
+	run "github.com/alibaba/RedisShake/redis-shake"
 	"github.com/alibaba/RedisShake/redis-shake/base"
-	"github.com/alibaba/RedisShake/redis-shake/common"
-	"github.com/alibaba/RedisShake/redis-shake/configure"
+	utils "github.com/alibaba/RedisShake/redis-shake/common"
+	conf "github.com/alibaba/RedisShake/redis-shake/configure"
 	"github.com/alibaba/RedisShake/redis-shake/metric"
 	"github.com/alibaba/RedisShake/redis-shake/restful"
 
-	"github.com/gugemichael/nimo4go"
+	nimo "github.com/gugemichael/nimo4go"
 )
 
 type Exit struct{ Code int }
@@ -38,13 +38,29 @@ const (
 
 func main() {
 	var err error
-	defer handleExit()
-	defer utils.Goodbye()
+	// 在main方法结束时调用
+	// defer handleExit()
+	// defer utils.Goodbye()
 
-	// argument options
+	// argument options ； flag是标准库中处理命令行参数的库
+	// 接收3个参数：配置路径；使用的目的或者类型：解码，转存，下载，同步，rump是什么意思？版本号
+	// 命令行的启动方式
 	configuration := flag.String("conf", "", "configuration path")
 	tp := flag.String("type", "", "run type: decode, restore, dump, sync, rump")
 	version := flag.Bool("version", false, "show version")
+
+	//本地调试
+	// var versionVal bool = false
+	// var tp *string
+	// var configuration *string
+	// var version *bool
+
+	// var confVal string = "/Users/aly/gospace/RedisShake/conf/redis-shake.conf"
+	// var tpVal string = "sync"
+	// configuration = &confVal
+	// tp = &tpVal
+	// version = &versionVal
+
 	flag.Parse()
 
 	if *version {
@@ -61,8 +77,9 @@ func main() {
 		return
 	}
 
+	// 在导入包的时候就定义了conf，而conf里面有Options的公共变量
 	conf.Options.Version = utils.Version
-	conf.Options.Type = *tp
+	conf.Options.Type = *tp // 将操作类型赋值给Options的Type
 
 	var file *os.File
 	if file, err = os.Open(*configuration); err != nil {
@@ -95,7 +112,7 @@ func main() {
 		crash(fmt.Sprintf("write pid failed. %v", err), -5)
 	}
 
-	// create runner
+	// create runner；根据类型创建不同的runner，这里使用了多态和封装
 	var runner base.Runner
 	switch *tp {
 	case conf.TypeDecode:
@@ -112,6 +129,7 @@ func main() {
 
 	// create metric
 	metric.CreateMetric(runner)
+	// 协程的方式启动服务
 	go startHttpServer()
 
 	// print configuration
@@ -121,7 +139,7 @@ func main() {
 		log.Infof("redis-shake configuration: %s", string(opts))
 	}
 
-	// run
+	// 开始运行实现类的入口方法
 	runner.Main()
 
 	log.Infof("execute runner[%v] finished!", reflect.TypeOf(runner))

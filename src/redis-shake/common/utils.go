@@ -849,7 +849,7 @@ func restoreBigRdbEntry(c redigo.Conn, e *rdb.BinEntry) error {
 	return err
 }
 
-func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
+func RestoreRdbEntry(redisConnect redigo.Conn, e *rdb.BinEntry) {
 	/*
 	 * for ucloud, special judge.
 	 * 046110.key -> key
@@ -863,6 +863,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 		e.Key = bytes.Replace(e.Key, []byte("{"), []byte(""), 1)
 		e.Key = bytes.Replace(e.Key, []byte("}"), []byte(""), 1)
 	}
+	// 重新计算到期时间（RDB是静态的，比如使用RDB恢复数据时，很多key可能已经过期）
 	if e.ExpireAt != 0 {
 		now := uint64(time.Now().Add(conf.Options.ShiftTime).UnixNano())
 		now /= uint64(time.Millisecond)
@@ -873,7 +874,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 		}
 	}
 	if e.Type == rdb.RdbTypeQuicklist {
-		exist, err := Bool(c.Do("exists", e.Key))
+		exist, err := Bool(redisConnect.Do("exists", e.Key))
 		if err != nil {
 			log.Panicf(err.Error())
 		}
@@ -883,7 +884,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 				if !conf.Options.Metric {
 					log.Infof("warning, rewrite key: %v", string(e.Key))
 				}
-				_, err := Int64(c.Do("del", e.Key))
+				_, err := Int64(redisConnect.Do("del", e.Key))
 				if err != nil {
 					log.Panicf("del %s error (%v)", string(e.Key), err)
 				}
@@ -893,9 +894,9 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 				log.Panicf("target key name is busy: %v", string(e.Key))
 			}
 		}
-		restoreQuicklistEntry(c, e)
+		restoreQuicklistEntry(redisConnect, e)
 		if e.ExpireAt != 0 {
-			r, err := Int64(c.Do("pexpire", e.Key, ttlms))
+			r, err := Int64(redisConnect.Do("pexpire", e.Key, ttlms))
 			if err != nil && r != 1 {
 				log.Panicf("expire %s error (%v)", string(e.Key), err)
 			}
@@ -906,7 +907,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 	// load lua script
 	if e.Type == rdb.RdbFlagAUX && string(e.Key) == "lua" {
 		if conf.Options.FilterLua == false {
-			_, err := c.Do("script", "load", e.Value)
+			_, err := redisConnect.Do("script", "load", e.Value)
 			if err != nil {
 				log.Panicf(err.Error())
 			}
@@ -923,18 +924,18 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 			if !conf.Options.Metric {
 				log.Infof("warning, rewrite big key: %s", string(e.Key))
 			}
-			_, err := Int64(c.Do("del", e.Key))
+			_, err := Int64(redisConnect.Do("del", e.Key))
 			if err != nil {
 				log.Panicf("del %s error (%v)", string(e.Key), err)
 			}
 		}
 
-		if err := restoreBigRdbEntry(c, e); err != nil {
+		if err := restoreBigRdbEntry(redisConnect, e); err != nil {
 			log.Panic(err)
 		}
 
 		if e.ExpireAt != 0 {
-			r, err := Int64(c.Do("pexpire", e.Key, ttlms))
+			r, err := Int64(redisConnect.Do("pexpire", e.Key, ttlms))
 			if err != nil && r != 1 {
 				log.Panicf("expire %s error (%v)", string(e.Key), err)
 			}
@@ -945,11 +946,11 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 	if e.Type == rdb.RdbTypeFunction2 {
 		var err error
 		if conf.Options.FunctionExists == "flush" {
-			_, err = c.Do("FUNCTION", "RESTORE", e.Value, "FLUSH")
+			_, err = redisConnect.Do("FUNCTION", "RESTORE", e.Value, "FLUSH")
 		} else if conf.Options.FunctionExists == "replace" {
-			_, err = c.Do("FUNCTION", "RESTORE", e.Value, "REPLACE")
+			_, err = redisConnect.Do("FUNCTION", "RESTORE", e.Value, "REPLACE")
 		} else {
-			_, err = c.Do("FUNCTION", "RESTORE", e.Value)
+			_, err = redisConnect.Do("FUNCTION", "RESTORE", e.Value)
 		}
 		if err != nil {
 			log.Panicf(err.Error())
@@ -973,7 +974,7 @@ func RestoreRdbEntry(c redigo.Conn, e *rdb.BinEntry) {
 	// fmt.Printf("key: %v, value: %v params: %v\n", string(e.Key), e.Value, params)
 	// s, err := String(c.Do("restore", params...))
 RESTORE:
-	s, err := redigoCluster.String(c.Do("restore", params...))
+	s, err := redigoCluster.String(redisConnect.Do("restore", params...))
 	if err != nil {
 		/*The reply value of busykey in 2.8 kernel is "target key name is busy",
 		  but in 4.0 kernel is "BUSYKEY Target key name already exists"*/
@@ -988,7 +989,7 @@ RESTORE:
 				if conf.Options.TargetReplace {
 					params = append(params, "REPLACE")
 				} else {
-					_, err = redigoCluster.Int(c.Do("del", e.Key))
+					_, err = redigoCluster.Int(redisConnect.Do("del", e.Key))
 					if err != nil {
 						log.Panicf("delete key[%v] failed[%v]", string(e.Key), err)
 					}
@@ -1003,7 +1004,7 @@ RESTORE:
 		} else if strings.Contains(err.Error(), "Bad data format") {
 			// from big version to small version may has this error. we need to split the data struct
 			log.Warnf("return error[%v], ignore it and try to split the value", err)
-			if err := restoreBigRdbEntry(c, e); err != nil {
+			if err := restoreBigRdbEntry(redisConnect, e); err != nil {
 				log.Panic(err)
 			}
 		} else {
@@ -1041,20 +1042,26 @@ func FlushWriter(w *bufio.Writer) {
 func NewRDBLoader(reader *bufio.Reader, rbytes *atomic2.Int64, size int) chan *rdb.BinEntry {
 	pipe := make(chan *rdb.BinEntry, size)
 	go func() {
-		defer close(pipe)
-		l := rdb.NewLoader(stats.NewCountReader(reader, rbytes))
-		if err := l.Header(); err != nil {
+
+		defer close(pipe) // 完成后关闭管道
+
+		loader := rdb.NewLoader(stats.NewCountReader(reader, rbytes))
+
+		if err := loader.Header(); err != nil {
 			log.PanicError(err, "parse rdb header error")
 		}
+		// 循环读取
 		for {
-			if entry, err := l.NextBinEntry(); err != nil {
+			// 从加载器上读取binEntry
+			if entry, err := loader.NextBinEntry(); err != nil {
 				log.PanicError(err, "parse rdb entry error, if the err is :EOF, please check that if the src db log has client output buffer oom, if so set output buffer larger.")
 			} else {
 				if entry != nil {
+					// 写入管道
 					pipe <- entry
 				} else {
 					if rdb.FromVersion > 2 {
-						if err := l.Footer(); err != nil {
+						if err := loader.Footer(); err != nil {
 							log.PanicError(err, "parse rdb checksum error")
 						}
 					}

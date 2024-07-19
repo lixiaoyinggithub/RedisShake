@@ -8,8 +8,8 @@ import (
 
 	"github.com/alibaba/RedisShake/pkg/libs/log"
 
-	"github.com/alibaba/RedisShake/redis-shake/common"
-	"github.com/alibaba/RedisShake/redis-shake/configure"
+	utils "github.com/alibaba/RedisShake/redis-shake/common"
+	conf "github.com/alibaba/RedisShake/redis-shake/configure"
 	"github.com/alibaba/RedisShake/redis-shake/dbSync"
 )
 
@@ -30,6 +30,7 @@ func (cmd *CmdSync) GetDetailedInfo() interface{} {
 }
 
 func (cmd *CmdSync) Main() {
+	// 同步的基本信息结构，原数据源，目标数据源;slot的边界
 	type syncNode struct {
 		id                int
 		source            string
@@ -51,15 +52,19 @@ func (cmd *CmdSync) Main() {
 	}
 
 	// source redis number
-	total := utils.GetTotalLink()
+	total := utils.GetTotalLink() //数据源的个数
+	//协程交互的渠道
 	syncChan := make(chan syncNode, total)
+	// 根据数据源的数量创建对应的dbSyncers数组
 	cmd.dbSyncers = make([]*dbSync.DbSyncer, total)
+
+	//
 	for i, source := range conf.Options.SourceAddressList {
 		var target []string
 		if conf.Options.TargetType == conf.RedisTypeCluster {
 			target = conf.Options.TargetAddressList
 		} else {
-			// round-robin pick
+			// round-robin pick，轮训选择
 			pick := utils.PickTargetRoundRobin(len(conf.Options.TargetAddressList))
 			target = []string{conf.Options.TargetAddressList[pick]}
 		}
@@ -82,7 +87,9 @@ func (cmd *CmdSync) Main() {
 	var wg sync.WaitGroup
 	wg.Add(len(conf.Options.SourceAddressList))
 
+	// 数据源拉取的并发度；如果配置为0，则在一个协程里完成所有数据源的同步
 	for i := 0; i < int(conf.Options.SourceRdbParallel); i++ {
+		// 按数据源的粒度启动一个DB的协程
 		go func() {
 			for {
 				nd, ok := <-syncChan
@@ -94,7 +101,7 @@ func (cmd *CmdSync) Main() {
 				ds := dbSync.NewDbSyncer(nd.id, nd.source, nd.sourcePassword, nd.target, nd.targetPassword,
 					nd.slotLeftBoundary, nd.slotRightBoundary, conf.Options.HttpProfile+i)
 				cmd.dbSyncers[nd.id] = ds
-				// run in routine
+				// run in routine？ 本身已经在协程的环境下了，但是数据源的异步与真正的数据源可能不一致
 				go ds.Sync()
 
 				// wait full sync done
@@ -109,5 +116,7 @@ func (cmd *CmdSync) Main() {
 	close(syncChan)
 
 	// never quit because increment syncing is always running
+	// select {} 是一个特殊的 select 语句，它用于创建一个无限循环的选择块。
+	// select 语句用于在多个通信操作中选择一个可执行的操作。通常，select 语句会包含多个 case 子句，每个 case 子句表示一个通信操作。当 select 语句执行时，它会选择其中一个可执行的 case 子句，并执行相应的操作
 	select {}
 }

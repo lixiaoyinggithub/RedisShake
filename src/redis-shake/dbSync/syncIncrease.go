@@ -25,28 +25,32 @@ import (
 )
 
 func (ds *DbSyncer) syncCommand(reader *bufio.Reader, target []string, authType, passwd string, tlsEnable bool, tlsSkipVerify bool, dbid int) {
-	isCluster := conf.Options.TargetType == conf.RedisTypeCluster
-	c := utils.OpenRedisConnWithTimeout(target, authType, passwd, incrSyncReadeTimeout, incrSyncReadeTimeout, isCluster, tlsEnable, tlsSkipVerify)
-	defer c.Close()
 
-	ds.sendBuf = make(chan cmdDetail, conf.Options.SenderCount)
+	fmt.Println("syncCommand start")
+
+	isCluster := conf.Options.TargetType == conf.RedisTypeCluster
+
+	targetConnect := utils.OpenRedisConnWithTimeout(target, authType, passwd, incrSyncReadeTimeout, incrSyncReadeTimeout, isCluster, tlsEnable, tlsSkipVerify)
+	defer targetConnect.Close()
+
+	ds.sendBuf = make(chan cmdDetail, conf.Options.SenderCount) // 根据缓冲区的大小创建sendBuf
 	ds.delayChannel = make(chan *delayNode, conf.Options.SenderDelayChannelSize)
 
-	// fetch source redis offset
+	// 协程的方式执行；fetch source redis offset
 	go ds.fetchOffset()
 
-	// receiver target reply
-	go ds.receiveTargetReply(c)
+	// 协程的方式执行；receiver target reply
+	go ds.receiveTargetReply(targetConnect)
 
-	// parse command from source redis
+	// 协程的方式执行；parse command from source redis；不断循环读取，并写入到缓冲区
 	go ds.parseSourceCommand(reader)
 
-	// do send to target
-	go ds.sendTargetCommand(c)
+	// 协程的方式执行；do send to target；不断从缓冲区读取，并写入到目标redis
+	go ds.sendTargetCommand(targetConnect)
 
 	// print stat
 	for lStat := ds.stat.Stat(); ; {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 10)
 		nStat := ds.stat.Stat()
 		var b bytes.Buffer
 		fmt.Fprintf(&b, "DbSyncer[%d] sync: ", ds.id)
@@ -181,6 +185,7 @@ func (ds *DbSyncer) parseSourceCommand(reader *bufio.Reader) {
 	)
 
 	// if the start db id != 0, send dbid to the target at first
+	// 切换db：SELECT 1  / SELECT 2
 	if ds.startDbId != 0 {
 		log.Infof("last dbid[%v] != 0, send 'select' first", ds.startDbId)
 		dbS := fmt.Sprintf("%d", ds.startDbId)

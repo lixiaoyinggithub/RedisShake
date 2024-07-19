@@ -103,9 +103,9 @@ const (
 	StandAloneRoleAll    = "all"
 
 	TypeDecode  = "decode"
-	TypeRestore = "restore"
+	TypeRestore = "restore" // 从文件恢复数据
 	TypeDump    = "dump"
-	TypeSync    = "sync"
+	TypeSync    = "sync" //数据迁移模式
 	TypeRump    = "rump"
 )
 

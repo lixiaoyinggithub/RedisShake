@@ -2,15 +2,16 @@ package dbSync
 
 import (
 	"bufio"
-	"github.com/alibaba/RedisShake/pkg/libs/log"
-	"github.com/alibaba/RedisShake/redis-shake/base"
-	"github.com/alibaba/RedisShake/redis-shake/common"
-	"github.com/alibaba/RedisShake/redis-shake/heartbeat"
-	"github.com/alibaba/RedisShake/redis-shake/metric"
 	"io"
 
+	"github.com/alibaba/RedisShake/pkg/libs/log"
+	"github.com/alibaba/RedisShake/redis-shake/base"
+	utils "github.com/alibaba/RedisShake/redis-shake/common"
+	"github.com/alibaba/RedisShake/redis-shake/heartbeat"
+	"github.com/alibaba/RedisShake/redis-shake/metric"
+
 	"github.com/alibaba/RedisShake/redis-shake/checkpoint"
-	"github.com/alibaba/RedisShake/redis-shake/configure"
+	conf "github.com/alibaba/RedisShake/redis-shake/configure"
 )
 
 // one sync link corresponding to one DbSyncer
@@ -105,19 +106,25 @@ func (ds *DbSyncer) Sync() {
 		log.Infof("DbSyncer[%d] checkpoint info: runId[%v], offset[%v] dbid[%v]", ds.id, runId, offset, dbid)
 	}
 
+	// 修改状态
 	base.Status = "waitfull"
 	var input io.ReadCloser
 	var nsize int64
 	var isFullSync bool
 	if conf.Options.Psync {
+		// psync是Redis 2.8版本引入的命令，用于在主节点和从节点之间进行部分同步。当从节点与主节点断开连接后重新连接时，从节点会向主节点发送psync命令，
+		// 主节点会根据从节点的请求情况，选择全量同步或增量同步的方式进行数据同步。如果从节点的复制偏移量（replication offset）在主节点的复制积压缓冲区（replication backlog）之内，主节点会执行增量同步，
+		// 只传输从节点缺失的部分数据；如果从节点的复制偏移量超出了主节点的复制积压缓冲区，主节点会执行全量同步，传输整个数据集
+		log.Infof("sendSyncCmd psync")
 		input, nsize, isFullSync, runId = ds.sendPSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
 			conf.Options.SourceTLSEnable, conf.Options.SourceTLSSkipVerify, runId, offset)
 		ds.runId = runId
 	} else {
-		// sync
+		log.Infof("sendSyncCmd sync")
+		// sync sync是Redis 2.6版本之前使用的命令，用于在主节点和从节点之间进行全量同步
 		input, nsize = ds.sendSyncCmd(ds.source, conf.Options.SourceAuthType, ds.sourcePassword,
 			conf.Options.SourceTLSEnable, conf.Options.SourceTLSSkipVerify)
-		isFullSync = true
+		isFullSync = true // 因为psync默认为false，那么磨人会执行到这个位置，所以默认就是全量同步
 	}
 	defer input.Close()
 
@@ -130,8 +137,10 @@ func (ds *DbSyncer) Sync() {
 		go heartbeatCtl.Start()
 	}
 
+	// input可以理解为一个来自网络的输入，具体类型为net.Conn；通过它实例化一个reader
 	reader := bufio.NewReaderSize(input, utils.ReaderBufferSize)
 
+	//如果为全量同步，读取RDB文件同步存量的数据
 	if isFullSync {
 		// sync rdb
 		log.Infof("DbSyncer[%d] rdb file size = %d", ds.id, nsize)
@@ -145,8 +154,9 @@ func (ds *DbSyncer) Sync() {
 		metric.GetMetric(ds.id).SetFullSyncProgress(ds.id, 100)
 	}
 
-	// sync increment
+	// sync increment; 转为增量同步
 	base.Status = "incr"
 	close(ds.WaitFull)
-	ds.syncCommand(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, conf.Options.TargetTLSEnable, conf.Options.TargetTLSSkipVerify, dbid)
+	// 同步命令，传入了reader，可以读取来自数据源网络的命令
+	//ds.syncCommand(reader, ds.target, conf.Options.TargetAuthType, ds.targetPassword, conf.Options.TargetTLSEnable, conf.Options.TargetTLSSkipVerify, dbid)
 }

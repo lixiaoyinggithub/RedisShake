@@ -16,6 +16,7 @@ import (
 	logRotate "gopkg.in/natefinch/lumberjack.v2"
 )
 
+// 防腐层，进行很多校验
 // sanitize options. TODO, need split
 func SanitizeOptions(tp string) error {
 	var err error
@@ -37,7 +38,7 @@ func SanitizeOptions(tp string) error {
 
 	if conf.Options.Parallel == 0 { // not set
 		conf.Options.Parallel = 64 // default is 64
-	} else if conf.Options.Parallel > 1024 {
+	} else if conf.Options.Parallel > 10240 {
 		return fmt.Errorf("parallel[%v] should in (0, 1024]", conf.Options.Parallel)
 	} else {
 		conf.Options.Parallel = int(math.Max(float64(conf.Options.Parallel), float64(conf.Options.NCpu)))
