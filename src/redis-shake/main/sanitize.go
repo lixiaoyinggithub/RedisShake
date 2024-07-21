@@ -129,7 +129,7 @@ func SanitizeOptions(tp string) error {
 	default:
 		return fmt.Errorf("invalid log level[%v]", conf.Options.LogLevel)
 	}
-	log.SetLevel(logDeepLevel)
+	// log.SetLevel(logDeepLevel)
 
 	if conf.Options.SourceAuthType == "" {
 		conf.Options.SourceAuthType = "auth"
