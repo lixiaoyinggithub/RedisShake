@@ -112,23 +112,23 @@ func SanitizeOptions(tp string) error {
 		log.StdLog = log.New(utils.LogRotater, "")
 	}
 	// set log level
-	var logDeepLevel log.LogLevel
-	switch conf.Options.LogLevel {
-	case utils.LogLevelNone:
-		logDeepLevel = log.LEVEL_NONE
-	case utils.LogLevelError:
-		logDeepLevel = log.LEVEL_ERROR
-	case utils.LogLevelWarn:
-		logDeepLevel = log.LEVEL_WARN
-	case "":
-		fallthrough
-	case utils.LogLevelInfo:
-		logDeepLevel = log.LEVEL_INFO
-	case utils.LogLevelDebug:
-		logDeepLevel = log.LEVEL_DEBUG
-	default:
-		return fmt.Errorf("invalid log level[%v]", conf.Options.LogLevel)
-	}
+	// var logDeepLevel log.LogLevel
+	// switch conf.Options.LogLevel {
+	// case utils.LogLevelNone:
+	// 	logDeepLevel = log.LEVEL_NONE
+	// case utils.LogLevelError:
+	// 	logDeepLevel = log.LEVEL_ERROR
+	// case utils.LogLevelWarn:
+	// 	logDeepLevel = log.LEVEL_WARN
+	// case "":
+	// 	fallthrough
+	// case utils.LogLevelInfo:
+	// 	logDeepLevel = log.LEVEL_INFO
+	// case utils.LogLevelDebug:
+	// 	logDeepLevel = log.LEVEL_DEBUG
+	// default:
+	// 	return fmt.Errorf("invalid log level[%v]", conf.Options.LogLevel)
+	// }
 	// log.SetLevel(logDeepLevel)
 
 	if conf.Options.SourceAuthType == "" {
