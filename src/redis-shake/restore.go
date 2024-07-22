@@ -160,7 +160,7 @@ func (dr *dbRestorer) restoreRDBFile(reader *bufio.Reader, target []string, auth
 					} else {
 						dr.nentry.Incr()
 
-						log.Debugf("routine[%v] try restore key[%s] with value length[%v]", dr.id, e.Key, len(e.Value))
+						// log.Debugf("routine[%v] try restore key[%s] with value length[%v]", dr.id, e.Key, len(e.Value))
 
 						if conf.Options.TargetDB != -1 {
 							if conf.Options.TargetDB != int(lastdb) {

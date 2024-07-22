@@ -37,8 +37,6 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 			// 根据配置的并发度，并发读取多个db
 			go func() {
 
-				log.Infof("Parallel start")
-
 				defer wg.Done()
 				targetConnect := utils.OpenRedisConn(target, authType, passwd, conf.Options.TargetType == conf.RedisTypeCluster,
 					tlsEnable, tlsSkipVerify)
@@ -63,7 +61,7 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 					} else {
 						ds.stat.keys.Incr()
 
-						log.Debugf("DbSyncer[%d] try restore key[%s] with value length[%v]", ds.id, entry.Key, len(entry.Value))
+						// log.Debugf("DbSyncer[%d] try restore key[%s] with value length[%v]", ds.id, entry.Key, len(entry.Value))
 
 						if conf.Options.TargetDB != -1 {
 							if conf.Options.TargetDB != int(lastdb) {
@@ -107,15 +105,12 @@ func (ds *DbSyncer) syncRDBFile(reader *bufio.Reader, target []string, authType,
 							}
 						}
 
-						goroutineId := getGoroutineID()
-						log.Debugf("DbSyncer[%d] start restoring key[%s] with value length[%v],gid=[%d]", ds.id, entry.Key, len(entry.Value), goroutineId)
-
 						// pipeIndex := int(crc32.ChecksumIEEE(entry.Key)) % pipeSize
 						// pipes[pipeIndex] <- entry
 						// 转存entry
 						utils.RestoreRdbEntry(targetConnect, entry)
 
-						log.Debugf("DbSyncer[%d] restore key[%s] ok", ds.id, entry.Key)
+						// log.Debugf("DbSyncer[%d] restore key[%s] ok", ds.id, entry.Key)
 					}
 				} //  一直循环直到pipe结束
 
